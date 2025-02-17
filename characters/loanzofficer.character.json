@@ -1,6 +1,6 @@
 {
     "name": "StudentLoanzAgent",
-    "clients": [],
+    "clients": ["discord"],
     "modelProvider": "openai",
     "settings": {
       "voice": {
