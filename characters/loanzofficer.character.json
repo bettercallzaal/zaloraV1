@@ -4,7 +4,14 @@
     "modelProvider": "openai",
     "settings": {
       "voice": {
-        "model": "en_US-male-medium"
+        "model": "en_US-male-medium",
+        "enabled": true,
+        "autoJoin": true,
+        "preferredChannelId": "",
+        "textToSpeech": {
+          "enabled": true,
+          "service": "elevenlabs"
+        }
       }
     },
     "clientConfig": {
@@ -12,7 +19,12 @@
         "shouldRespondOnlyToMentions": false,
         "shouldIgnoreBotMessages": true,
         "messageDebounceTime": 1000,
-        "shouldIgnoreDirectMessages": false
+        "shouldIgnoreDirectMessages": false,
+        "voice": {
+          "enabled": true,
+          "autoJoin": true,
+          "permissions": ["CONNECT", "SPEAK", "USE_VAD"]
+        }
       }
     },
     "plugins": [],
