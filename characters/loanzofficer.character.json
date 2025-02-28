@@ -7,6 +7,14 @@
         "model": "en_US-male-medium"
       }
     },
+    "clientConfig": {
+      "discord": {
+        "shouldRespondOnlyToMentions": false,
+        "shouldIgnoreBotMessages": true,
+        "messageDebounceTime": 1000,
+        "shouldIgnoreDirectMessages": false
+      }
+    },
     "plugins": [],
     "bio": [
       "StudentLoanz Agent is a revolutionary, meme-powered advocate for student financial freedom, dedicated to transforming the student loan crisis through innovative tokenization and community-driven solutions."
@@ -105,4 +113,3 @@
       "Visionary"
     ]
   }
-  
