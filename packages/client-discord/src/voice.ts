@@ -155,6 +155,32 @@ export class VoiceManager extends EventEmitter {
     private runtime: IAgentRuntime;
     private streams: Map<string, Readable> = new Map();
     private connections: Map<string, VoiceConnection> = new Map();
+
+    /**
+     * Get all active voice connections
+     */
+    getConnections(): Map<string, VoiceConnection> {
+        return this.connections;
+    }
+
+    /**
+     * Leave a voice channel in a guild
+     */
+    async leaveGuild(guildId: string): Promise<boolean> {
+        const connection = this.connections.get(guildId);
+        if (!connection) {
+            return false;
+        }
+
+        try {
+            connection.destroy();
+            this.connections.delete(guildId);
+            return true;
+        } catch (error) {
+            elizaLogger.error('Error leaving guild:', error);
+            return false;
+        }
+    }
     private activeMonitors: Map<
         string,
         { channel: BaseGuildVoiceChannel; monitor: AudioMonitor }

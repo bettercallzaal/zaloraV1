@@ -20,9 +20,12 @@ import chat_with_attachments from "./actions/chat_with_attachments.ts";
 import download_media from "./actions/download_media.ts";
 import joinvoice from "./actions/joinvoice.ts";
 import leavevoice from "./actions/leavevoice.ts";
+import playmusic from "./actions/playmusic.ts";
 import summarize from "./actions/summarize_conversation.ts";
 import transcribe_media from "./actions/transcribe_media.ts";
 import { MessageManager } from "./messages.ts";
+import { MusicHandler } from "./music/music-handler.ts";
+import { MusicProcessorManager } from "./music/music-processor-manager.ts";
 import channelStateProvider from "./providers/channelState.ts";
 import voiceStateProvider from "./providers/voiceState.ts";
 import { VoiceManager } from "./voice.ts";
@@ -35,6 +38,8 @@ export class DiscordClient extends EventEmitter {
     character: Character;
     private messageManager: MessageManager;
     private voiceManager: VoiceManager;
+    private musicHandler: MusicHandler;
+    private musicProcessorManager: MusicProcessorManager;
 
     constructor(runtime: IAgentRuntime) {
         super();
@@ -61,6 +66,8 @@ export class DiscordClient extends EventEmitter {
 
         this.runtime = runtime;
         this.voiceManager = new VoiceManager(this);
+        this.musicProcessorManager = new MusicProcessorManager();
+        this.musicHandler = new MusicHandler(this, this.voiceManager);
         this.messageManager = new MessageManager(this, this.voiceManager);
 
         this.client.once(Events.ClientReady, this.onClientReady.bind(this));
@@ -70,6 +77,8 @@ export class DiscordClient extends EventEmitter {
 
         this.runtime.registerAction(joinvoice);
         this.runtime.registerAction(leavevoice);
+        // TODO: Fix playmusic action to match Action interface
+        // this.runtime.registerAction(playmusic);
         this.runtime.registerAction(summarize);
         this.runtime.registerAction(chat_with_attachments);
         this.runtime.registerAction(transcribe_media);
@@ -103,26 +112,217 @@ export class DiscordClient extends EventEmitter {
         );
 
         // Handle a new message with the message manager
-        this.client.on(
-            Events.MessageCreate,
-            this.messageManager.handleMessage.bind(this.messageManager)
-        );
+        this.client.on(Events.MessageCreate, async (message) => {
+            // First check if it's a music-related message
+            const isMusicMessage = await this.musicHandler.processMessage(message);
+            const isMusicCommand = await this.musicHandler.processCommand(message);
+            
+            // If it's not music-related, pass it to the message manager
+            if (!isMusicMessage && !isMusicCommand) {
+                await this.messageManager.handleMessage(message);
+            }
+        });
 
         // Handle a new interaction
-        this.client.on(
-            Events.InteractionCreate,
-            this.handleInteractionCreate.bind(this)
-        );
+        this.client.on(Events.InteractionCreate, async (interaction) => {
+            // Handle music-related slash commands
+            if (interaction.isCommand()) {
+                const { commandName } = interaction;
+                
+                if (commandName === 'play' && interaction.options) {
+                    await interaction.deferReply();
+                    const url = interaction.options?.get('url')?.value as string;
+                    if (!url) {
+                        await interaction.editReply('Please provide a valid URL.');
+                        return;
+                    }
+                    
+                    // Check if bot is in a voice channel
+                    const guildId = interaction.guildId;
+                    if (!guildId) {
+                        await interaction.editReply('This command can only be used in a server.');
+                        return;
+                    }
+                    
+                    const connections = this.voiceManager.getConnections();
+                    const connection = connections.get(guildId);
+                    
+                    if (!connection) {
+                        await interaction.editReply('I need to be in a voice channel first. Use /joinchannel to invite me.');
+                        return;
+                    }
+                    
+                    // Get or create a music processor for this guild
+                    let processor = this.musicProcessorManager.getProcessor(guildId);
+                    if (!processor) {
+                        const { MusicProcessor } = await import('./music/music-processor');
+                        processor = new MusicProcessor();
+                        this.musicProcessorManager.setProcessor(guildId, processor);
+                    }
+                    
+                    try {
+                        const queueItem = await processor.addToQueue(url);
+                        if (!queueItem) {
+                            await interaction.editReply('I had trouble processing that music link.');
+                            return;
+                        }
+                        
+                        connection.subscribe(processor.getPlayer());
+                        
+                        await interaction.editReply(`Added to queue: **${queueItem.metadata.title}** by **${queueItem.metadata.artist}**`);
+                    } catch (error) {
+                        elizaLogger.error('Error playing music:', error);
+                        await interaction.editReply('An error occurred while trying to play that music.');
+                    }
+                } else if (commandName === 'skip') {
+                    await interaction.deferReply();
+                    const guildId = interaction.guildId;
+                    if (!guildId) {
+                        await interaction.editReply('This command can only be used in a server.');
+                        return;
+                    }
+                    
+                    const processor = this.musicProcessorManager.getProcessor(guildId);
+                    if (!processor) {
+                        await interaction.editReply('No music is currently playing.');
+                        return;
+                    }
+                    
+                    const skipped = processor.skip();
+                    if (skipped) {
+                        await interaction.editReply(`Skipped: **${skipped.metadata.title}**`);
+                    } else {
+                        await interaction.editReply('No song to skip.');
+                    }
+                } else if (commandName === 'pause') {
+                    await interaction.deferReply();
+                    const guildId = interaction.guildId;
+                    if (!guildId) {
+                        await interaction.editReply('This command can only be used in a server.');
+                        return;
+                    }
+                    
+                    const processor = this.musicProcessorManager.getProcessor(guildId);
+                    if (!processor) {
+                        await interaction.editReply('No music is currently playing.');
+                        return;
+                    }
+                    
+                    const paused = processor.pause();
+                    if (paused) {
+                        await interaction.editReply('Playback paused.');
+                    } else {
+                        await interaction.editReply('Nothing is playing or already paused.');
+                    }
+                } else if (commandName === 'resume') {
+                    await interaction.deferReply();
+                    const guildId = interaction.guildId;
+                    if (!guildId) {
+                        await interaction.editReply('This command can only be used in a server.');
+                        return;
+                    }
+                    
+                    const processor = this.musicProcessorManager.getProcessor(guildId);
+                    if (!processor) {
+                        await interaction.editReply('No music is currently playing.');
+                        return;
+                    }
+                    
+                    const resumed = processor.resume();
+                    if (resumed) {
+                        await interaction.editReply('Playback resumed.');
+                    } else {
+                        await interaction.editReply('Nothing is paused or already playing.');
+                    }
+                } else if (commandName === 'stop') {
+                    await interaction.deferReply();
+                    const guildId = interaction.guildId;
+                    if (!guildId) {
+                        await interaction.editReply('This command can only be used in a server.');
+                        return;
+                    }
+                    
+                    const processor = this.musicProcessorManager.getProcessor(guildId);
+                    if (!processor) {
+                        await interaction.editReply('No music is currently playing.');
+                        return;
+                    }
+                    
+                    processor.stop();
+                    await interaction.editReply('Playback stopped and queue cleared.');
+                } else if (commandName === 'queue') {
+                    await interaction.deferReply();
+                    const guildId = interaction.guildId;
+                    if (!guildId) {
+                        await interaction.editReply('This command can only be used in a server.');
+                        return;
+                    }
+                    
+                    const processor = this.musicProcessorManager.getProcessor(guildId);
+                    if (!processor) {
+                        await interaction.editReply('No music is currently playing.');
+                        return;
+                    }
+                    
+                    const queue = processor.getQueue();
+                    if (queue.length === 0) {
+                        await interaction.editReply('The queue is empty.');
+                        return;
+                    }
+                    
+                    let queueMessage = '🎵 **Current Queue** 🎵\n';
+                    queue.forEach((item, index) => {
+                        if (index === 0) {
+                            queueMessage += `**Now Playing:** ${item.metadata.title} by ${item.metadata.artist}\n`;
+                        } else {
+                            queueMessage += `${index}. ${item.metadata.title} by ${item.metadata.artist}\n`;
+                        }
+                    });
+                    
+                    await interaction.editReply(queueMessage);
+                } else {
+                    // Handle other commands with the original method
+                    this.handleInteractionCreate(interaction);
+                }
+            } else {
+                // Handle other interactions with the original method
+                this.handleInteractionCreate(interaction);
+            }
+        });
     }
 
     async stop() {
         try {
+            // Stop all music processors
+            this.musicProcessorManager.stopAll();
+            
             // disconnect websocket
             // this unbinds all the listeners
             await this.client.destroy();
         } catch (e) {
             elizaLogger.error("client-discord instance stop err", e);
         }
+    }
+    
+    /**
+     * Get the voice manager
+     */
+    getVoiceManager(): VoiceManager {
+        return this.voiceManager;
+    }
+    
+    /**
+     * Get the music processor manager
+     */
+    getMusicProcessorManager(): MusicProcessorManager {
+        return this.musicProcessorManager;
+    }
+    
+    /**
+     * Get the music handler
+     */
+    getMusicHandler(): MusicHandler {
+        return this.musicHandler;
     }
 
     private async onClientReady(readyClient: { user: { tag: any; id: any } }) {
@@ -146,6 +346,38 @@ export class DiscordClient extends EventEmitter {
             {
                 name: "leavechannel",
                 description: "Leave the current voice channel",
+            },
+            {
+                name: "play",
+                description: "Play music from a URL",
+                options: [
+                    {
+                        name: "url",
+                        type: 3, // STRING type
+                        description: "The URL of the music to play",
+                        required: true,
+                    },
+                ],
+            },
+            {
+                name: "skip",
+                description: "Skip the current song",
+            },
+            {
+                name: "pause",
+                description: "Pause the current song",
+            },
+            {
+                name: "resume",
+                description: "Resume playback",
+            },
+            {
+                name: "stop",
+                description: "Stop playback and clear the queue",
+            },
+            {
+                name: "queue",
+                description: "Show the current music queue",
             },
         ];
 
