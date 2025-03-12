@@ -813,7 +813,7 @@ export class VoiceManager extends EventEmitter {
         }
     }
 
-    private async convertOpusToWav(pcmBuffer: Buffer): Promise<Buffer> {
+    private async convertOpusToWav(pcmBuffer: Buffer): Promise<ArrayBuffer> {
         try {
             // Generate the WAV header
             const wavHeader = getWavHeader(
@@ -823,8 +823,12 @@ export class VoiceManager extends EventEmitter {
 
             // Concatenate the WAV header and PCM data
             const wavBuffer = Buffer.concat([wavHeader, pcmBuffer]);
-
-            return wavBuffer;
+            
+            // Convert Buffer to ArrayBuffer for transcription service
+            return wavBuffer.buffer.slice(
+                wavBuffer.byteOffset,
+                wavBuffer.byteOffset + wavBuffer.byteLength
+            );
         } catch (error) {
             console.error("Error converting PCM to WAV:", error);
             throw error;
