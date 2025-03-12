@@ -77,8 +77,7 @@ export class DiscordClient extends EventEmitter {
 
         this.runtime.registerAction(joinvoice);
         this.runtime.registerAction(leavevoice);
-        // TODO: Fix playmusic action to match Action interface
-        // this.runtime.registerAction(playmusic);
+        this.runtime.registerAction(playmusic);
         this.runtime.registerAction(summarize);
         this.runtime.registerAction(chat_with_attachments);
         this.runtime.registerAction(transcribe_media);

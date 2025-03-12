@@ -1,4 +1,4 @@
-import { elizaLogger, type IAgentRuntime } from "@elizaos/core";
+import { elizaLogger, type IAgentRuntime, type ActionExample, type Handler, type Validator } from "@elizaos/core";
 import { AudioPlayerStatus } from "@discordjs/voice";
 import { DiscordClient } from "..";
 import { MusicProcessor } from "../music/music-processor";
@@ -14,11 +14,49 @@ interface PlayMusicArgs {
 export default {
   name: "playmusic",
   description: "Play music from a URL in a voice channel",
-  platforms: ["discord"],
-
-  execute: async (args: PlayMusicArgs, runtime: IAgentRuntime) => {
+  similes: [
+    "play a song",
+    "play music",
+    "add song to queue",
+    "stream music"
+  ],
+  
+  examples: [
+    [
+      {
+        user: "user123",
+        content: { text: "Can you play some music for me?" }
+      },
+      {
+        user: "assistant",
+        content: { text: "I'd be happy to play some music for you! Could you share a link to the song you'd like to hear?" }
+      },
+      {
+        user: "user123",
+        content: { text: "https://www.youtube.com/watch?v=dQw4w9WgXcQ" }
+      },
+      {
+        user: "assistant",
+        content: { text: "I'll play 'Rick Astley - Never Gonna Give You Up' for you now!" }
+      }
+    ]
+  ],
+  
+  validate: (async (args: any) => {
+    const typedArgs = args as PlayMusicArgs;
+    if (!typedArgs.guildId) {
+      return { valid: false, error: "Guild ID is required" };
+    }
+    if (!typedArgs.url) {
+      return { valid: false, error: "URL is required" };
+    }
+    return { valid: true };
+  }) as unknown as Validator,
+  
+  handler: (async (args: any, runtime: IAgentRuntime) => {
+    const typedArgs = args as PlayMusicArgs;
+    const { guildId, url } = typedArgs;
     try {
-      const { guildId, url } = args;
       
       // Get the Discord client
       const discordClient = runtime.clients["discord"] as DiscordClient;
@@ -86,7 +124,5 @@ export default {
         error: `Failed to play music: ${error}`,
       };
     }
-  },
+  }) as unknown as Handler
 };
-
-
